@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>make.fun step-up sign</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; background:#0e0e12; color:#f2f2f5; margin:0; padding:20px; }
+  h1 { font-size:19px; }
+  p { color:#b9b9c4; font-size:14px; line-height:1.45; }
+  textarea { width:100%; box-sizing:border-box; background:#17171d; color:#f2f2f5; border:1px solid #33333d; border-radius:10px; padding:10px; font-size:12px; }
+  button { width:100%; padding:14px; margin-top:12px; border:0; border-radius:12px; font-size:16px; font-weight:600; background:#e93fd8; color:#fff; }
+  button.secondary { background:#26262e; }
+  #wallet { font-size:13px; color:#9fe8a9; word-break:break-all; }
+  #status { font-size:14px; color:#ffd479; min-height:20px; }
+</style>
+</head>
+<body>
+<h1>Sign a make.fun confirmation</h1>
+<p>Connect the wallet that make.fun shows as the confirming wallet, then sign the exact message below. This is a plain text signature: no transaction, no fee.</p>
+<p id="wallet">Wallet: not connected</p>
+<button id="connect" class="secondary">Connect Phantom</button>
+<p>Message to sign</p>
+<textarea id="msg" rows="9"></textarea>
+<button id="sign">Sign with Phantom</button>
+<p id="status"></p>
+<p>Signature (send this to your agent)</p>
+<textarea id="sig" rows="4" readonly placeholder="The signature appears here after signing"></textarea>
+<button id="copy" class="secondary">Copy signature</button>
+<script>
+  const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  function b58encode(bytes) {
+    let zeros = 0;
+    while (zeros < bytes.length && bytes[zeros] === 0) zeros++;
+    const digits = [0];
+    for (let i = zeros; i < bytes.length; i++) {
+      let carry = bytes[i];
+      for (let j = 0; j < digits.length; j++) {
+        const v = digits[j] * 256 + carry;
+        digits[j] = v % 58;
+        carry = Math.floor(v / 58);
+      }
+      while (carry > 0) { digits.push(carry % 58); carry = Math.floor(v / 58); }
+    }
+    return '1'.repeat(zeros) + digits.reverse().map(d => B58[d]).join('');
+  }
+  const params = new URLSearchParams(location.search);
+  const preset = params.get('message');
+  if (preset) document.getElementById('msg').value = preset;
+  const provider = () => (window.phantom && window.phantom.solana) || window.solana;
+  const status = (t) => { document.getElementById('status').textContent = t; };
+  async function ensureConnected() {
+    const p = provider();
+    if (!p) { status('Phantom provider not found. Open this page inside the Phantom app browser.'); throw new Error('no provider'); }
+    if (!p.isPhantom) { status('Connected wallet is not Phantom.'); }
+    const resp = await p.connect();
+    document.getElementById('wallet').textContent = 'Wallet: ' + resp.publicKey.toString();
+    return p;
+  }
+  document.getElementById('connect').onclick = async () => {
+    try { await ensureConnected(); status('Connected. Now tap "Sign with Phantom".'); }
+    catch (e) { status('Connect failed: ' + e.message); }
+  };
+  document.getElementById('sign').onclick = async () => {
+    try {
+      const p = await ensureConnected();
+      const text = document.getElementById('msg').value;
+      if (!text) { status('Message is empty.'); return; }
+      const bytes = new TextEncoder().encode(text);
+      const result = await p.signMessage(bytes, 'utf8');
+      const sig = result.signature instanceof Uint8Array ? result.signature : new Uint8Array(Object.values(result.signature));
+      document.getElementById('sig').value = b58encode(sig);
+      status('Signed. Copy the signature and send it to your agent.');
+    } catch (e) { status('Sign failed: ' + (e.message || e)); }
+  };
+  document.getElementById('copy').onclick = async () => {
+    const v = document.getElementById('sig').value;
+    if (!v) { status('Nothing to copy yet.'); return; }
+    try { await navigator.clipboard.writeText(v); status('Signature copied.'); }
+    catch { document.getElementById('sig').select(); document.execCommand('copy'); status('Signature copied.'); }
+  };
+</script>
+</body>
+</html>
